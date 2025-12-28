@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  # The IB Gateway (The "Bridge")
+  ib-gateway:
+    image: gnuns/ib-gateway:latest
+    ports:
+      - "4002:4002"
+    environment:
+      - TWS_USERID=your_paper_username
+      - TWS_PASSWORD=your_paper_password
+      - TRADING_MODE=paper
+
+  # Your FISR Bot (The "Brain")
+  fisr-bot:
+    build: .
+    volumes:
+      - ./data:/app/data  # This saves your database to the server disk
+    depends_on:
+      - ib-gateway
+    restart: always
+
+  # The Dashboard (The "Eyes")
+  dashboard:
+    build: .
+    command: streamlit run src/dashboard.py
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fisr-bot
