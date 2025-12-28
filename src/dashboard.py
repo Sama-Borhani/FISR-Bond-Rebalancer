@@ -5,7 +5,7 @@ import plotly.express as px
 import yfinance as yf
 
 # --- CONFIGURATION ---
-DB_PATH = 'data/fisr_trading.db'
+DB_PATH = 'fisr_trading.db'
 STARTING_CASH = 100000
 
 st.set_page_config(page_title="FISR Quantitative Dashboard", layout="wide")
