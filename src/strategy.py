@@ -2,7 +2,7 @@ import yfinance as yf
 import pandas as pd
 from db import log_signal, initialize_db, log_event
 from risk import RiskGatekeeper
-from src.broker import log_mock_trade
+from broker import log_mock_trade
 
 # --- 1. DATA ACQUISITION ---
 def get_current_prices(tickers=['SHY', 'IEF', 'TLT']):
