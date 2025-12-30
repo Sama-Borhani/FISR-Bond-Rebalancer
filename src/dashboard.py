@@ -4,83 +4,121 @@ import sqlite3
 import os
 import yfinance as yf
 import plotly.express as px
+from datetime import datetime, timedelta
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION & PATHING ---
 STARTING_CASH = 100000
-TICKERS = ['SHY', 'IEF', 'TLT']
+# Ensure we point to the root DB file
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "fisr_trading.db")
 
-# --- DYNAMIC PATHING ---
-current_dir = os.path.dirname(os.path.abspath(__file__)) 
-DB_PATH = os.path.join(os.path.dirname(current_dir), 'fisr_trading.db')
-
-def get_data(query):
+def get_data(query, params=None):
     if not os.path.exists(DB_PATH):
         return pd.DataFrame()
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query(query, conn)
+    df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
 
+def update_config(key, value):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE config SET value = ? WHERE key = ?", (value, key))
+    conn.commit()
+    conn.close()
+
 def get_live_prices(tickers):
+    if not tickers: return {}
     data = yf.download(tickers, period="1d", interval="1m", progress=False)
     return {t: data['Close'][t].iloc[-1] for t in tickers}
 
 # --- UI SETUP ---
-st.set_page_config(page_title="FISR Dashboard", layout="wide")
-st.title("🏛️ FISR Fixed-Income Portfolio")
-st.markdown(f"**Status:** 24/7 Monitoring | **Database:** {DB_PATH}")
+st.set_page_config(page_title="FISR Institutional Dashboard", layout="wide")
+st.title("🏛️ FISR Quantitative Bond Desk")
 
-# --- DATA LOADING ---
-trades_df = get_data("SELECT * FROM trades")
-signals_df = get_data("SELECT * FROM signals ORDER BY timestamp DESC LIMIT 1")
+# --- SIDEBAR: COMMAND CENTER ---
+st.sidebar.header("🕹️ Strategy Control")
+if os.path.exists(DB_PATH):
+    # Kill Switch Toggle
+    current_ks = get_data("SELECT value FROM config WHERE key='kill_switch'").iloc[0,0]
+    new_ks = st.sidebar.toggle("System Kill Switch", value=(current_ks == 1.0), 
+                               help="Toggle to 0 to stop all automated trading immediately.")
+    update_config('kill_switch', 1.0 if new_ks else 0.0)
+    
+    # Target Duration Slider
+    current_target = get_data("SELECT value FROM config WHERE key='target_duration'").iloc[0,0]
+    new_target = st.sidebar.slider("Target Portfolio Duration (Yrs)", 2.0, 15.0, float(current_target))
+    if new_target != current_target:
+        update_config('target_duration', new_target)
+    
+    st.sidebar.divider()
+    st.sidebar.info(f"**Status:** {'RUNNING' if new_ks else 'STOPPED'}")
 
-# 1. CURRENT PORTFOLIO SECTION
-st.header("📊 Current Portfolio Composition")
-if not trades_df.empty:
-    # Calculate current share quantities
-    # (Sum of BUYs minus Sum of SELLs - though our bot currently only BUYs)
-    holdings = trades_df.groupby('ticker')['qty'].sum().to_dict()
-    prices = get_live_prices(list(holdings.keys()))
-    
-    # Calculate Market Value
-    portfolio_data = []
-    total_market_value = 0
-    for t, qty in holdings.items():
-        val = qty * prices[t]
-        total_market_value += val
-        portfolio_data.append({"Ticker": t, "Shares": qty, "Price": f"${prices[t]:.2f}", "Value": val})
-    
-    # Add Remaining Cash (Simplified for mock)
-    cash = STARTING_CASH - trades_df[trades_df['side'] == 'BUY']['trade_value'].sum()
-    total_equity = total_market_value + max(0, cash)
-    
-    # Display Metrics
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Equity", f"${total_equity:,.2f}")
-    c2.metric("Portfolio Value", f"${total_market_value:,.2f}")
-    c3.metric("Current Target", f"{signals_df['target_duration'].iloc[0]} yrs" if not signals_df.empty else "N/A")
+# --- MAIN CONTENT ---
 
-    # Show Allocation Chart
-    df_plot = pd.DataFrame(portfolio_data)
-    fig = px.pie(df_plot, values='Value', names='Ticker', title="Asset Allocation")
-    st.plotly_chart(fig)
-    st.table(df_plot)
+# 1. LIVE ALLOCATION PIE CHART
+st.header("📊 Live Portfolio Allocation")
+trades_all = get_data("SELECT * FROM trades")
+
+if not trades_all.empty:
+    # Calculate current holdings (Sum of Buy qty - Sum of Sell qty)
+    holdings = trades_all.groupby('ticker')['qty'].sum().to_dict()
+    active_tickers = [t for t, q in holdings.items() if q > 0]
+    
+    if active_tickers:
+        prices = get_live_prices(active_tickers)
+        
+        portfolio_stats = []
+        total_market_value = 0
+        for t in active_tickers:
+            qty = holdings[t]
+            mkt_val = qty * prices[t]
+            total_market_value += mkt_val
+            portfolio_stats.append({"Ticker": t, "Value": mkt_val, "Qty": qty})
+        
+        # Display Pie Chart
+        df_pie = pd.DataFrame(portfolio_stats)
+        fig = px.pie(df_pie, values='Value', names='Ticker', hole=0.4,
+                     title="Current Market Value Distribution",
+                     color_discrete_sequence=px.colors.sequential.RdBu)
+        
+        c1, c2 = st.columns([2, 1])
+        c1.plotly_chart(fig, use_container_width=True)
+        
+        # Portfolio Summary Metrics
+        c2.metric("Market Value", f"${total_market_value:,.2f}")
+        cash_pos = STARTING_CASH - (trades_all['qty'] * trades_all['price']).sum()
+        c2.metric("Cash Balance", f"${max(0, cash_pos):,.2f}")
+    else:
+        st.info("Portfolio currently holds 100% Cash.")
 else:
-    st.info("Portfolio is currently 100% Cash. Waiting for the first signal to execute trades.")
+    st.warning("No trade history found. Run the GitHub Action to generate data.")
 
-# 2. TRADE HISTORY REPORT
-st.header("Execution Report (Trade History)")
-if not trades_df.empty:
-    trades_df['timestamp'] = pd.to_datetime(trades_df['timestamp'])
-    st.dataframe(trades_df.sort_values('timestamp', ascending=False), use_container_width=True)
+st.divider()
+
+# 2. TRADE HISTORY WITH DATE FILTER
+st.header("📜 Trade History & Interval Analysis")
+
+# Date Interval Selector
+col_a, col_b = st.columns(2)
+start_date = col_a.date_input("Start Date", datetime.now() - timedelta(days=7))
+end_date = col_b.date_input("End Date", datetime.now())
+
+# Convert dates to string for SQL query
+query = "SELECT * FROM trades WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC"
+filtered_trades = get_data(query, (start_date.isoformat(), f"{end_date.isoformat()} 23:59:59"))
+
+if not filtered_trades.empty:
+    # Analysis of Changes
+    buy_vol = filtered_trades[filtered_trades['side'] == 'BUY']['qty'].sum()
+    st.write(f"**Period Summary:** {len(filtered_trades)} trades executed. Total volume: {buy_vol:,.0f} shares.")
+    
+    # Display Table
+    st.dataframe(filtered_trades[['timestamp', 'ticker', 'side', 'qty', 'price', 'status']], 
+                 use_container_width=True)
 else:
-    st.write("No trades executed yet.")
+    st.info(f"No trades found between {start_date} and {end_date}.")
 
-# 3. SYSTEM LOGS (The "Pulse")
-st.sidebar.header("System Pulse")
-logs_df = get_data("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 5")
-if not logs_df.empty:
-    for _, row in logs_df.iterrows():
-        st.sidebar.write(f"**{row['timestamp']}**")
-        st.sidebar.write(f"{row['message']}")
-        st.sidebar.divider()
+# 3. SYSTEM LOGS
+with st.expander("View System Audit Logs"):
+    logs = get_data("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 20")
+    st.table(logs)

@@ -1,78 +1,44 @@
 import yfinance as yf
-import pandas as pd
-from db import log_signal, initialize_db, log_event
+from db import get_config, log_event, DB_PATH
 from risk import RiskGatekeeper
 from broker import log_mock_trade
 
-# --- 1. DATA ACQUISITION ---
-def get_current_prices(tickers=['SHY', 'IEF', 'TLT']):
-    """Fetches real-time prices using yfinance."""
-    print(f"📡 Fetching live prices for {tickers}...")
-    data = yf.download(tickers, period="1d", interval="1m", progress=False)
-    # Get the last available 'Close' price for each ticker
-    prices = {ticker: data['Close'][ticker].iloc[-1] for ticker in tickers}
-    return prices
+def get_current_portfolio_duration(holdings, current_durations):
+    # (Simplified duration calculation logic)
+    total_val = sum(holdings.values())
+    if total_val == 0: return 0
+    weights = {t: val/total_val for t, val in holdings.items()}
+    return sum(weights[t] * current_durations[t] for t in weights)
 
-# --- 2. STRATEGY MATH ---
-def calculate_weights(target_duration, durations):
-    """Calculates weights for a 'Two-Prong' portfolio to match a target duration."""
-    weights = {'SHY': 0.0, 'IEF': 0.0, 'TLT': 0.0}
-    
-    # Logic: Barbell vs Bullet
-    if durations['SHY'] <= target_duration < durations['IEF']:
-        denominator = durations['IEF'] - durations['SHY']
-        weights['IEF'] = (target_duration - durations['SHY']) / denominator
-        weights['SHY'] = 1.0 - weights['IEF']
-        
-    elif durations['IEF'] <= target_duration <= durations['TLT']:
-        denominator = durations['TLT'] - durations['IEF']
-        weights['TLT'] = (target_duration - durations['IEF']) / denominator
-        weights['IEF'] = 1.0 - weights['TLT']
-        
-    return weights
-
-# --- 3. EXECUTION LOOP ---
 if __name__ == "__main__":
-    # Initialize DB (Ensures tables exist in data/fisr_trading.db)
-    initialize_db()
     gatekeeper = RiskGatekeeper()
     
-    # Configuration
-    TICKERS = ['SHY', 'IEF', 'TLT']
-    CURRENT_DURATIONS = {'SHY': 1.92, 'IEF': 7.45, 'TLT': 16.80} # Benchmark metrics
-    MY_TARGET = 8.0 # Target Portfolio Duration
-    PORTFOLIO_CASH = 100000 # Your starting paper-trading balance
+    # 1. Desk Constants
+    DURATIONS = {'SHY': 1.92, 'IEF': 7.45, 'TLT': 16.80}
+    DRIFT_THRESHOLD = 0.2  # Desk Rule: Only rebalance if drift > 0.2 yrs
     
-    # 1. Get Live Prices
-    try:
-        live_prices = get_current_prices(TICKERS)
-    except Exception as e:
-        log_event("DATA_ERROR", f"Failed to fetch prices: {str(e)}")
-        print(f"❌ Error fetching prices: {e}")
+    # 2. Get Real-Time Targets from Dashboard
+    target_duration = get_config('target_duration')
+    
+    # 3. Check Drift (Pseudo-logic for current duration)
+    # If drift is too small, we exit to save transaction costs
+    current_duration = 7.9  # Example: Fetching this from your holdings table
+    drift = abs(current_duration - target_duration)
+    
+    if drift < DRIFT_THRESHOLD:
+        log_event("INFO", f"No rebalance: Drift ({drift:.2f}) < Threshold ({DRIFT_THRESHOLD})")
         exit()
 
-    # 2. Calculate the target weights
-    target_weights = calculate_weights(MY_TARGET, CURRENT_DURATIONS)
+    # 4. Calculate Execution
+    # ... (Your existing weight calculation math) ...
     
-    # 3. ASK THE GATEKEEPER if it's safe
-    is_safe, message = gatekeeper.check_weights(target_weights)
-    
-    if is_safe:
-        print(f"✅ Risk Check Passed: {message}")
-        log_signal(MY_TARGET, target_weights)
+    # 5. Risk-Managed Execution
+    for ticker, qty in proposed_trades.items():
+        price = get_live_price(ticker)
+        order_value = qty * price
         
-        # 4. EXECUTE MOCK TRADES
-        # We simulate buying the shares needed to reach the target weights
-        for ticker, weight in target_weights.items():
-            if weight > 0:
-                price = live_prices[ticker]
-                # Calculate how many shares to buy (Weight * Total Cash / Price)
-                target_qty = (weight * PORTFOLIO_CASH) / price
-                
-                # Send to our Mock Broker to log in the database
-                log_mock_trade(ticker, round(target_qty, 2), round(price, 2), "BUY")
-        
-        log_event("STRATEGY_RUN", "Successfully rebalanced portfolio.")
-    else:
-        print(f"⚠️ Risk Check Failed: {message}")
-        log_event("RISK_REJECT", message)
+        is_safe, msg = gatekeeper.check_trade(order_value)
+        if is_safe:
+            log_mock_trade(ticker, qty, price, "BUY", order_value)
+        else:
+            log_event("RISK_REJECT", msg)

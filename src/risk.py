@@ -1,30 +1,41 @@
 import sqlite3
+import os
+from datetime import datetime
 
 class RiskGatekeeper:
-    def __init__(self, db_name="fisr_trading.db"):
-        self.db_name = db_name
-        self.max_daily_turnover = 0.20  # Don't trade more than 20% of account/day
-        self.max_position_size = 0.60   # No single ETF should be > 60%
-
-    def check_weights(self, proposed_weights):
-        """
-        Validates if the math output is safe to trade.
-        Returns (is_safe, reason)
-        """
-        for ticker, weight in proposed_weights.items():
-            # Rule 1: Position Concentration
-            if weight > self.max_position_size:
-                return False, f"REJECTED: {ticker} weight ({weight:.2%}) exceeds 60% limit."
-            
-            # Rule 2: Negative weights (No Shorting)
-            if weight < 0:
-                return False, f"REJECTED: {ticker} weight is negative. Long-only only."
-
-        return True, "ACCEPTED: Risk checks passed."
+    def __init__(self):
+        # Use the same pathing as db.py
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.db_path = os.path.join(base_dir, "fisr_trading.db")
+        self.equity = 100000.0
+        self.turnover_limit = 0.20   # 20% total equity per day
+        self.fat_finger_limit = 0.05 # 5% max per single order
 
     def is_kill_switch_active(self):
-        """Placeholder for a manual emergency stop."""
-        # For now, we assume it's always safe. 
-        # In Milestone 4, we will link this to a button on your dashboard.
-        return False
-    
+        conn = sqlite3.connect(self.db_path)
+        val = conn.execute("SELECT value FROM config WHERE key='kill_switch'").fetchone()[0]
+        conn.close()
+        return val == 0.0
+
+    def check_trade(self, order_value):
+        """Institutional pre-trade verification."""
+        # 1. Check Kill Switch
+        if self.is_kill_switch_active():
+            return False, "REJECTED: Kill Switch is ACTIVE (Stop)"
+
+        # 2. Fat-Finger Check (Is this order too big?)
+        if order_value > (self.equity * self.fat_finger_limit):
+            return False, f"REJECTED: Order value ${order_value:,.2f} exceeds 5% limit"
+
+        # 3. Daily Turnover Cap
+        conn = sqlite3.connect(self.db_path)
+        today = datetime.now().strftime('%Y-%m-%d')
+        daily_executed = conn.execute(
+            "SELECT SUM(trade_value) FROM trades WHERE timestamp LIKE ?", 
+            (f"{today}%",)).fetchone()[0] or 0.0
+        conn.close()
+
+        if (daily_executed + order_value) > (self.equity * self.turnover_limit):
+            return False, "REJECTED: Daily 20% turnover cap reached"
+
+        return True, "ACCEPTED: Risk checks passed"
