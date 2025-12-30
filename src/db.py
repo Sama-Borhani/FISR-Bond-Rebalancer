@@ -59,3 +59,4 @@ def log_event(level, message):
 
 if __name__ == "__main__":
     initialize_db()
+# Schema Version 2.0 - Institutional Upgrade
