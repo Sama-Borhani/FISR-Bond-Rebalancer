@@ -1,17 +1,20 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import plotly.express as px
-import yfinance as yf
+import os
 
-# --- CONFIGURATION ---
-DB_PATH = 'fisr_trading.db'
-STARTING_CASH = 100000
+# --- DYNAMIC PATHING FIX ---
+# This finds the absolute path of the current file (dashboard.py)
+current_dir = os.path.dirname(os.path.abspath(__file__)) 
+# This moves up one level to the root, then into the 'data' folder
+DB_PATH = os.path.join(os.path.dirname(current_dir), 'data', 'fisr_trading.db')
 
-st.set_page_config(page_title="FISR Quantitative Dashboard", layout="wide")
-
-# --- DATA FETCHING ---
 def get_data(query):
+    # Check if the database actually exists before trying to open it
+    if not os.path.exists(DB_PATH):
+        st.error(f"Database not found at {DB_PATH}")
+        return pd.DataFrame() # Return empty if missing
+    
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(query, conn)
     conn.close()
