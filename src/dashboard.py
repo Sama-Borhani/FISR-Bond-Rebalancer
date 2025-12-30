@@ -31,9 +31,32 @@ def update_config(key, value):
     conn.close()
 
 def get_live_prices(tickers):
-    if not tickers: return {}
-    data = yf.download(tickers, period="1d", interval="1m", progress=False)
-    return {t: data['Close'][t].iloc[-1] for t in tickers}
+    if not tickers:
+        return {}
+    try:
+        # 1. Fetch data with a fallback period
+        data = yf.download(tickers, period="1d", interval="1m", progress=False)
+        
+        # 2. Check if the dataframe is empty
+        if data.empty or 'Close' not in data:
+            # Fallback: try getting the last 5 days of daily data if 1m is empty
+            data = yf.download(tickers, period="5d", interval="1d", progress=False)
+            
+        prices = {}
+        for t in tickers:
+            # 3. Securely handle single vs multi-ticker dataframes
+            ticker_data = data['Close'][t] if len(tickers) > 1 else data['Close']
+            
+            # 4. Use .dropna() to ensure we aren't grabbing a 'NaN' value
+            valid_prices = ticker_data.dropna()
+            if not valid_prices.empty:
+                prices[t] = valid_prices.iloc[-1]
+            else:
+                prices[t] = 0.0 # Or a default historical value
+        return prices
+    except Exception as e:
+        st.error(f"Market Data Error: {e}")
+        return {t: 0.0 for t in tickers}
 
 # --- UI SETUP ---
 st.set_page_config(page_title="FISR Institutional Dashboard", layout="wide")
