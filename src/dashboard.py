@@ -2,18 +2,23 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
+import yfinance as yf          # ADDED
+import plotly.express as px     # ADDED
+
+# --- CONFIGURATION ---
+STARTING_CASH = 100000          # ADDED
 
 # --- DYNAMIC PATHING FIX ---
-# This finds the absolute path of the current file (dashboard.py)
 current_dir = os.path.dirname(os.path.abspath(__file__)) 
-# This moves up one level to the root, then into the 'data' folder
 DB_PATH = os.path.join(os.path.dirname(current_dir), 'data', 'fisr_trading.db')
 
 def get_data(query):
     # Check if the database actually exists before trying to open it
     if not os.path.exists(DB_PATH):
         st.error(f"Database not found at {DB_PATH}")
-        return pd.DataFrame() # Return empty if missing
+        # DEBUG: List files to see what Streamlit sees
+        st.write("Current Directory Files:", os.listdir(os.path.dirname(DB_PATH)) if os.path.exists(os.path.dirname(DB_PATH)) else "Data folder missing")
+        return pd.DataFrame()
     
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(query, conn)
@@ -25,6 +30,7 @@ def get_current_prices(tickers):
     return {ticker: data['Close'][ticker].iloc[-1] for ticker in tickers}
 
 # --- DASHBOARD UI ---
+st.set_page_config(page_title="FISR Quantitative Dashboard", layout="wide")
 st.title("🏛️ FISR Fixed-Income Rebalancer")
 st.markdown(f"**Status:** 24/7 Automated Production Logic | **Region:** Toronto (Mock Execution)")
 
@@ -39,7 +45,6 @@ try:
         
         # Calculate Equity
         current_value = sum(holdings[t] * prices[t] for t in holdings)
-        # For simplicity in this mock, we assume cash is re-invested
         total_equity = current_value 
         pnl = total_equity - STARTING_CASH
         pnl_pct = (pnl / STARTING_CASH) * 100
@@ -49,19 +54,16 @@ try:
         col2.metric("Total P/L", f"${pnl:,.2f}", delta=f"{pnl_pct:.2f}%")
         col3.metric("Trade Count", len(trades_df))
 
-        # 2. PERFORMANCE CHART (Cumulative Investment over time)
+        # 2. PERFORMANCE CHART
         st.subheader("📈 Mock Performance (Equity Curve)")
-        # We simulate the growth by looking at trade timestamps
         trades_df['timestamp'] = pd.to_datetime(trades_df['timestamp'])
         trades_df = trades_df.sort_values('timestamp')
-        
-        # Calculate cumulative value of trades at the time they happened
         trades_df['trade_value'] = trades_df['qty'] * trades_df['price']
         trades_df['cumulative_equity'] = trades_df['trade_value'].cumsum()
         
         fig = px.line(trades_df, x='timestamp', y='cumulative_equity', 
-                      title="Cumulative Portfolio Exposure (Growth of Strategy)",
-                      labels={'cumulative_equity': 'Portfolio Exposure ($)', 'timestamp': 'Date'})
+                      title="Cumulative Portfolio Exposure",
+                      labels={'cumulative_equity': 'Exposure ($)', 'timestamp': 'Date'})
         st.plotly_chart(fig, use_container_wide=True)
 
         # 3. RECENT TRADES TABLE
@@ -73,7 +75,6 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
-    st.info("If this is the first run, the database might be empty. Wait for the GitHub Action to run.")
 
 # 4. RISK STATUS
 st.sidebar.header("Risk Gatekeeper Settings")
