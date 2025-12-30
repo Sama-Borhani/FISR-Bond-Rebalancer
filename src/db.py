@@ -6,6 +6,8 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "fisr_trading.db")
 
+_DB_INITIALIZED = False
+
 def initialize_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -40,18 +42,41 @@ def initialize_db():
     conn.close()
     print(f"✅ Database initialized: {DB_PATH}")
 
+def _ensure_db():
+    global _DB_INITIALIZED
+    if _DB_INITIALIZED:
+        return
+    # Best-effort ensure DB exists and tables are present
+    try:
+        initialize_db()
+    except Exception:
+        # If initialization fails for some reason, re-raise so caller can see the failure
+        raise
+    finally:
+        _DB_INITIALIZED = True
+
 def get_config(key):
+    _ensure_db()
     conn = sqlite3.connect(DB_PATH)
-    val = conn.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()[0]
-    conn.close()
-    return val
+    try:
+        row = conn.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        raise KeyError(f"Config key '{key}' not found in database. Ensure the config table has been initialized.")
+    return row[0]
 
 def log_event(level, message):
+    _ensure_db()
     conn = sqlite3.connect(DB_PATH)
-    conn.execute('INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)', 
-                 (datetime.now(), level, message))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute('INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)', 
+                     (datetime.now(), level, message))
+        conn.commit()
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
+    # Allow running db.py directly for local initialization
     initialize_db()
