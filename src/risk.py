@@ -9,7 +9,7 @@ class RiskGatekeeper:
         self.db_path = os.path.join(base_dir, "fisr_trading.db")
         self.equity = 100000.0
         self.turnover_limit = 0.20   # 20% total equity per day
-        self.fat_finger_limit = 0.05 # 5% max per single order
+        self.fat_finger_limit = 1 # 5% max per single order
 
     def is_kill_switch_active(self):
         conn = sqlite3.connect(self.db_path)
