@@ -11,13 +11,17 @@ def get_current_portfolio_duration(holdings, current_durations):
     return sum(weights[t] * current_durations[t] for t in weights)
 
 if __name__ == "__main__":
+    # 1. NEW: Force initialization first to create the 'config' table
+    from db import initialize_db
+    initialize_db() 
+    
     gatekeeper = RiskGatekeeper()
     
-    # 1. Desk Constants
+    # 2. Desk Constants
     DURATIONS = {'SHY': 1.92, 'IEF': 7.45, 'TLT': 16.80}
-    DRIFT_THRESHOLD = 0.2  # Desk Rule: Only rebalance if drift > 0.2 yrs
+    DRIFT_THRESHOLD = 0.2 
     
-    # 2. Get Real-Time Targets from Dashboard
+    # 3. Now this call will succeed because the table exists
     target_duration = get_config('target_duration')
     
     # 3. Check Drift (Pseudo-logic for current duration)
