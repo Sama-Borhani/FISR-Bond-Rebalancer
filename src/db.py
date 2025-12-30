@@ -1,13 +1,13 @@
+import os
 import sqlite3
 from datetime import datetime
 
-DB_NAME = "fisr_trading.db"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "fisr_trading.db")
 
 def initialize_db():
-    """Creates the database tables if they don't exist."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH) # Use DB_PATH
     cursor = conn.cursor()
-
     # Table 1: Store our rebalancing decisions
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS signals (
