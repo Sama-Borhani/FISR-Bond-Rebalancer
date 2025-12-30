@@ -1,9 +1,13 @@
+import os
 import sqlite3
 import datetime
 
+# Point to the same root file
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "fisr_trading.db")
+
 def log_mock_trade(ticker, qty, price, side):
-    """Records a simulated trade in the database."""
-    conn = sqlite3.connect('data/fisr_trading.db')
+    conn = sqlite3.connect(DB_PATH) # Use DB_PATH
     cursor = conn.cursor()
 
     # Create table if it doesn't exist
