@@ -23,4 +23,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "🤖 Automated Trade Log Update [Skip CI]"
-          file_pattern: 'data/fisr_trading.db'
+          file_pattern: 'fisr_trading.db'
