@@ -1,5 +1,9 @@
 import yfinance as yf
-from db import get_config, log_event, DB_PATH
+import pandas as pd
+import sqlite3
+import os
+# Corrected imports
+from db import get_config, log_event, initialize_db, DB_PATH, log_signal
 from risk import RiskGatekeeper
 from broker import log_mock_trade
 
