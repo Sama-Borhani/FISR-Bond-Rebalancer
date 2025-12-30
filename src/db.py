@@ -1,7 +1,9 @@
 import os
 import sqlite3
 from datetime import datetime
+from db import initialize_db
 
+initialize_db()
 # Centralized pathing to ensure Bot and Dashboard see the same file
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "fisr_trading.db")
