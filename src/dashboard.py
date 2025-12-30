@@ -2,83 +2,85 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
-import yfinance as yf          # ADDED
-import plotly.express as px     # ADDED
+import yfinance as yf
+import plotly.express as px
 
 # --- CONFIGURATION ---
-STARTING_CASH = 100000          # ADDED
+STARTING_CASH = 100000
+TICKERS = ['SHY', 'IEF', 'TLT']
 
-# --- DYNAMIC PATHING FIX ---
+# --- DYNAMIC PATHING ---
 current_dir = os.path.dirname(os.path.abspath(__file__)) 
-project_root = os.path.dirname(current_dir)
-DB_PATH = os.path.join(project_root, 'fisr_trading.db')
+DB_PATH = os.path.join(os.path.dirname(current_dir), 'fisr_trading.db')
 
 def get_data(query):
-    # Check if the database actually exists before trying to open it
     if not os.path.exists(DB_PATH):
-        st.error(f"Database not found at {DB_PATH}")
-        # DEBUG: List files to see what Streamlit sees
-        st.write("Current Directory Files:", os.listdir(os.path.dirname(DB_PATH)) if os.path.exists(os.path.dirname(DB_PATH)) else "Data folder missing")
         return pd.DataFrame()
-    
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(query, conn)
     conn.close()
     return df
 
-def get_current_prices(tickers):
+def get_live_prices(tickers):
     data = yf.download(tickers, period="1d", interval="1m", progress=False)
-    return {ticker: data['Close'][ticker].iloc[-1] for ticker in tickers}
+    return {t: data['Close'][t].iloc[-1] for t in tickers}
 
-# --- DASHBOARD UI ---
-st.set_page_config(page_title="FISR Quantitative Dashboard", layout="wide")
-st.title("🏛️ FISR Fixed-Income Rebalancer")
-st.markdown(f"**Status:** 24/7 Automated Production Logic | **Region:** Toronto (Mock Execution)")
+# --- UI SETUP ---
+st.set_page_config(page_title="FISR Dashboard", layout="wide")
+st.title("🏛️ FISR Fixed-Income Portfolio")
+st.markdown(f"**Status:** 24/7 Monitoring | **Database:** {DB_PATH}")
 
-# 1. METRICS SECTION
-try:
-    trades_df = get_data("SELECT * FROM trades")
+# --- DATA LOADING ---
+trades_df = get_data("SELECT * FROM trades")
+signals_df = get_data("SELECT * FROM signals ORDER BY timestamp DESC LIMIT 1")
+
+# 1. CURRENT PORTFOLIO SECTION
+st.header("📊 Current Portfolio Composition")
+if not trades_df.empty:
+    # Calculate current share quantities
+    # (Sum of BUYs minus Sum of SELLs - though our bot currently only BUYs)
+    holdings = trades_df.groupby('ticker')['qty'].sum().to_dict()
+    prices = get_live_prices(list(holdings.keys()))
     
-    if not trades_df.empty:
-        # Calculate current holdings
-        holdings = trades_df.groupby('ticker')['qty'].sum().to_dict()
-        prices = get_current_prices(list(holdings.keys()))
-        
-        # Calculate Equity
-        current_value = sum(holdings[t] * prices[t] for t in holdings)
-        total_equity = current_value 
-        pnl = total_equity - STARTING_CASH
-        pnl_pct = (pnl / STARTING_CASH) * 100
+    # Calculate Market Value
+    portfolio_data = []
+    total_market_value = 0
+    for t, qty in holdings.items():
+        val = qty * prices[t]
+        total_market_value += val
+        portfolio_data.append({"Ticker": t, "Shares": qty, "Price": f"${prices[t]:.2f}", "Value": val})
+    
+    # Add Remaining Cash (Simplified for mock)
+    cash = STARTING_CASH - trades_df[trades_df['side'] == 'BUY']['trade_value'].sum()
+    total_equity = total_market_value + max(0, cash)
+    
+    # Display Metrics
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Equity", f"${total_equity:,.2f}")
+    c2.metric("Portfolio Value", f"${total_market_value:,.2f}")
+    c3.metric("Current Target", f"{signals_df['target_duration'].iloc[0]} yrs" if not signals_df.empty else "N/A")
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Portfolio Value", f"${total_equity:,.2f}")
-        col2.metric("Total P/L", f"${pnl:,.2f}", delta=f"{pnl_pct:.2f}%")
-        col3.metric("Trade Count", len(trades_df))
+    # Show Allocation Chart
+    df_plot = pd.DataFrame(portfolio_data)
+    fig = px.pie(df_plot, values='Value', names='Ticker', title="Asset Allocation")
+    st.plotly_chart(fig)
+    st.table(df_plot)
+else:
+    st.info("Portfolio is currently 100% Cash. Waiting for the first signal to execute trades.")
 
-        # 2. PERFORMANCE CHART
-        st.subheader("📈 Mock Performance (Equity Curve)")
-        trades_df['timestamp'] = pd.to_datetime(trades_df['timestamp'])
-        trades_df = trades_df.sort_values('timestamp')
-        trades_df['trade_value'] = trades_df['qty'] * trades_df['price']
-        trades_df['cumulative_equity'] = trades_df['trade_value'].cumsum()
-        
-        fig = px.line(trades_df, x='timestamp', y='cumulative_equity', 
-                      title="Cumulative Portfolio Exposure",
-                      labels={'cumulative_equity': 'Exposure ($)', 'timestamp': 'Date'})
-        st.plotly_chart(fig, use_container_wide=True)
+# 2. TRADE HISTORY REPORT
+st.header("Execution Report (Trade History)")
+if not trades_df.empty:
+    trades_df['timestamp'] = pd.to_datetime(trades_df['timestamp'])
+    st.dataframe(trades_df.sort_values('timestamp', ascending=False), use_container_width=True)
+else:
+    st.write("No trades executed yet.")
 
-        # 3. RECENT TRADES TABLE
-        st.subheader("📜 Recent Executions")
-        st.dataframe(trades_df[['timestamp', 'ticker', 'side', 'qty', 'price', 'status']].sort_values('timestamp', ascending=False), use_container_width=True)
-
-    else:
-        st.info("Waiting for the first automated trade... (Bot runs every hour)")
-
-except Exception as e:
-    st.error(f"Error loading dashboard: {e}")
-
-# 4. RISK STATUS
-st.sidebar.header("Risk Gatekeeper Settings")
-st.sidebar.write("Max Concentration: 80%")
-st.sidebar.write("Min Duration: 1.5 yrs")
-st.sidebar.write("Max Duration: 15.0 yrs")
+# 3. SYSTEM LOGS (The "Pulse")
+st.sidebar.header("System Pulse")
+logs_df = get_data("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 5")
+if not logs_df.empty:
+    for _, row in logs_df.iterrows():
+        st.sidebar.write(f"**{row['timestamp']}**")
+        st.sidebar.write(f"{row['message']}")
+        st.sidebar.divider()
