@@ -1,26 +1,71 @@
 name: FISR 24/7 Automated Rebalancer
+
+
+
 on:
+
   schedule:
+
     - cron: '0 * * * *' # Runs every hour, 24/7
+
   workflow_dispatch:      # Allows you to click a button to run it manually
 
+
+
 jobs:
+
   rebalance:
+
     runs-on: ubuntu-latest
+
     permissions:
-      contents: write # Allows GitHub to save the trade logs back to your repo
+
+      contents: write 
+
+
+
     steps:
-      - uses: actions/checkout@v3
+
+      - name: Checkout Code
+
+        uses: actions/checkout@v3
+
+
+
       - name: Set up Python
+
         uses: actions/setup-python@v4
+
         with:
+
           python-version: '3.10'
-      - name: Install dependencies
-        run: pip install --upgrade pip && pip install pandas yfinance plotly
-      - name: Run Strategy
+
+
+
+      - name: Install Dependencies
+
+        run: pip install yfinance pandas
+
+
+
+      - name: Clean Old Database
+
+        run: rm -f fisr_trading.db
+
+
+
+      - name: Run Rebalancer
+
         run: python src/strategy.py
-      - name: Commit and Push Database
+
+
+
+      - name: Commit and Push Changes
+
         uses: stefanzweifel/git-auto-commit-action@v4
+
         with:
-          commit_message: "🤖 Automated Trade Log Update [Skip CI]"
+
+          commit_message: " Automated Trade Log Update [Skip CI]"
+
           file_pattern: 'fisr_trading.db'
