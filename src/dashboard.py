@@ -10,7 +10,8 @@ STARTING_CASH = 100000          # ADDED
 
 # --- DYNAMIC PATHING FIX ---
 current_dir = os.path.dirname(os.path.abspath(__file__)) 
-DB_PATH = os.path.join(os.path.dirname(current_dir), 'data', 'fisr_trading.db')
+project_root = os.path.dirname(current_dir)
+DB_PATH = os.path.join(project_root, 'fisr_trading.db')
 
 def get_data(query):
     # Check if the database actually exists before trying to open it
