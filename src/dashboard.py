@@ -5,6 +5,10 @@ import os
 import yfinance as yf
 import plotly.express as px
 from datetime import datetime, timedelta
+from db import initialize_db
+
+
+initialize_db()
 
 # --- CONFIGURATION & PATHING ---
 STARTING_CASH = 100000
