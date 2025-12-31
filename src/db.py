@@ -1,6 +1,8 @@
 import os
 import sqlite3
 from datetime import datetime
+import json # Add this import at the top of db.py
+
 
 # Centralized pathing
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,10 +45,19 @@ def get_config(key):
     return val
 
 def log_signal(target, weights):
+    """
+    Saves the target allocation to the database.
+    Updated to handle dynamic bond universes (any number of tickers).
+    """
     conn = sqlite3.connect(DB_PATH)
-    conn.execute('''INSERT INTO signals (timestamp, target_duration, shy_w, ief_w, tlt_w)
-                    VALUES (?, ?, ?, ?, ?)''', 
-                 (datetime.now(), target, weights['SHY'], weights['IEF'], weights['TLT']))
+    # We store the weights as a string so we aren't limited to 3 columns
+    weights_json = json.dumps(weights) 
+    
+    conn.execute("""
+        INSERT INTO signals (timestamp, target_duration, weights_json) 
+        VALUES (?, ?, ?)
+    """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), target, weights_json))
+    
     conn.commit()
     conn.close()
 
