@@ -1,15 +1,14 @@
 import os
 import sqlite3
+import json
 from datetime import datetime
-import json # Add this import at the top of db.py
-
 
 # Centralized pathing
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "fisr_trading.db")
 
 def initialize_db():
-    """Creates the database tables if they don't exist."""
+    """Creates the database tables with the new dynamic signals schema."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -18,11 +17,13 @@ def initialize_db():
     cursor.execute("INSERT OR IGNORE INTO config VALUES ('kill_switch', 1.0)")
     cursor.execute("INSERT OR IGNORE INTO config VALUES ('target_duration', 8.0)")
 
-    # Table 2: Signals
+    # Table 2: Signals (REWRITTEN FOR DYNAMIC UNIVERSES)
+    # We removed shy_w, ief_w, and tlt_w in favor of a single weights_json column
     cursor.execute('''CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME, target_duration REAL,
-            shy_w REAL, ief_w REAL, tlt_w REAL)''')
+            timestamp DATETIME, 
+            target_duration REAL,
+            weights_json TEXT)''')
 
     # Table 3: Trades (With trade_value column)
     cursor.execute('''CREATE TABLE IF NOT EXISTS trades (
@@ -47,16 +48,15 @@ def get_config(key):
 def log_signal(target, weights):
     """
     Saves the target allocation to the database.
-    Updated to handle dynamic bond universes (any number of tickers).
+    Stores the weights as a JSON string to handle any number of tickers.
     """
     conn = sqlite3.connect(DB_PATH)
-    # We store the weights as a string so we aren't limited to 3 columns
     weights_json = json.dumps(weights) 
     
     conn.execute("""
         INSERT INTO signals (timestamp, target_duration, weights_json) 
         VALUES (?, ?, ?)
-    """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), target, weights_json))
+    """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), float(target), weights_json))
     
     conn.commit()
     conn.close()
@@ -70,4 +70,3 @@ def log_event(level, message):
 
 if __name__ == "__main__":
     initialize_db()
-# Schema Version 2.0 - Institutional Upgrade
