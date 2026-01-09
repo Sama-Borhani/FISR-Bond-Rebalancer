@@ -84,7 +84,3 @@ The system is designed for **24/7 autonomous operation** via GitHub Actions. Eve
 2. Calculates duration drift from the target.
 3. Verifies risk compliance.
 4. Logs trades and system events for institutional audit.
-
----
-
-**Would you like me to help you add a "Skills & Technologies" section that specifically maps these features to the requirements often seen in job postings for Canadian banks?**
