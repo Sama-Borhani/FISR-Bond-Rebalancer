@@ -1,6 +1,4 @@
-This project has evolved into a sophisticated, autonomous multi-asset trading desk. Here is a professional **README.md** that highlights your quantitative skills, the "Market Study" logic, and the institutional risk controls you've built.
 
----
 
 # 🏛️ FISR: Quantitative Bond Rebalancing Desk
 
